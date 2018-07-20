@@ -1,6 +1,7 @@
 # YOLOv2 in PyTorch
 
-This is an implementation of longcw's [version](https://github.com/longcw/yolo2-pytorch)
+**DISCLAIMER:**
+This is an implementation of [longcw's version](https://github.com/longcw/yolo2-pytorch)
 of YOLOv2 in PyTorch. Much of the code is from that project.
 
 This is a [PyTorch](https://github.com/pytorch/pytorch)
@@ -29,25 +30,16 @@ I recommend to write your own dataloader using [torch.utils.data.Dataset](http:/
 since `multiprocessing.Pool.imap` won't stop even there is no enough memory space. 
 An example of `dataloader` for VOCDataset: [issue71](https://github.com/longcw/yolo2-pytorch/issues/71).
 
-**NOTE 3:**
+**NOTE 3: (ALREADY IMPLEMENTED)**
 Upgrade to PyTorch 0.4: https://github.com/longcw/yolo2-pytorch/issues/59
 
 
 
 ## Installation and demo
-1. Clone this repository
-    ```bash
-    git clone git@github.com:longcw/yolo2-pytorch.git
-    ```
 
-2. Build the reorg layer ([`tf.extract_image_patches`](https://www.tensorflow.org/api_docs/python/tf/extract_image_patches))
-    ```bash
-    cd yolo2-pytorch
-    ./make.sh
-    ```
-3. Download the trained model [yolo-voc.weights.h5](https://drive.google.com/open?id=0B4pXCfnYmG1WUUdtRHNnLWdaMEU) 
+1. Download the trained model [yolo-voc.weights.h5](https://drive.google.com/open?id=0B4pXCfnYmG1WUUdtRHNnLWdaMEU) 
 and set the model path in `demo.py`
-4. Run demo `python demo.py`. 
+2. Run demo `python demo.py`. Or run `train.py` or `test.py`.
 
 ## Training YOLOv2
 You can train YOLO2 on any dataset. Here we train it on VOC2007/2012.
