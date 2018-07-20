@@ -37,9 +37,14 @@ Upgrade to PyTorch 0.4: https://github.com/longcw/yolo2-pytorch/issues/59
 
 ## Installation
 
-1. Download the trained model [yolo-voc.weights.h5](https://drive.google.com/open?id=0B4pXCfnYmG1WUUdtRHNnLWdaMEU) 
-and set the model path in `demo.py`
-2. Run demo `python demo.py`. Or run `train.py` or `test.py`.
+1. Run make.sh with 
+    ```bash
+    ./make.sh
+    ```
+    
+2. Download the trained model [yolo-voc.weights.h5](https://drive.google.com/open?id=0B4pXCfnYmG1WUUdtRHNnLWdaMEU) 
+and set the model path in `demo.py`. Default is to put weight file into the `model` folder. Needed to run `demo.py`.
+3. Run demo `python demo.py`. Or run `train.py` or `test.py`.
 
 ## Training YOLOv2
 You can train YOLO2 on any dataset. Here we train it on VOC2007/2012.
