@@ -35,7 +35,7 @@ Upgrade to PyTorch 0.4: https://github.com/longcw/yolo2-pytorch/issues/59
 
 
 
-## Installation and demo
+## Installation
 
 1. Download the trained model [yolo-voc.weights.h5](https://drive.google.com/open?id=0B4pXCfnYmG1WUUdtRHNnLWdaMEU) 
 and set the model path in `demo.py`
