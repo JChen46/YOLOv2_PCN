@@ -1,4 +1,8 @@
 # YOLOv2 in PyTorch
+
+This is an implementation of longcw's [version](https://github.com/longcw/yolo2-pytorch)
+of YOLOv2 in PyTorch. Much of the code is from that project.
+
 This is a [PyTorch](https://github.com/pytorch/pytorch)
 implementation of YOLOv2.
 This project is mainly based on [darkflow](https://github.com/thtrieu/darkflow)
