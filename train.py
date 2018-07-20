@@ -75,10 +75,17 @@ for step in range(start_epoch * imdb.batch_per_epoch,
 
     # backward
     loss = net.loss
-    bbox_loss += net.bbox_loss.data.cpu().numpy()[0]
-    iou_loss += net.iou_loss.data.cpu().numpy()[0]
-    cls_loss += net.cls_loss.data.cpu().numpy()[0]
-    train_loss += loss.data.cpu().numpy()[0]
+    if torch.__version__.startswith('0.3'):
+        bbox_loss += net.bbox_loss.data.cpu().numpy()[0]
+        iou_loss += net.iou_loss.data.cpu().numpy()[0]
+        cls_loss += net.cls_loss.data.cpu().numpy()[0]
+        train_loss += loss.data.cpu().numpy()[0]
+    else:
+        bbox_loss += float(net.bbox_loss.data.cpu().numpy())
+        iou_loss += float(net.iou_loss.data.cpu().numpy())
+        cls_loss += float(net.cls_loss.data.cpu().numpy())
+        train_loss += float(loss.data.cpu().numpy())
+
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
