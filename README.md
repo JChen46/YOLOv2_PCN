@@ -1,4 +1,4 @@
-# YOLOv2 in PyTorch
+# YOLOv2 with PCN in PyTorch
 
 **DISCLAIMER:**
 This is an implementation of [longcw's version](https://github.com/longcw/yolo2-pytorch)
