@@ -81,25 +81,8 @@ you can set the data path as following.
 5. Download the [pretrained darknet19 model](https://drive.google.com/file/d/0B4pXCfnYmG1WRG52enNpcV80aDg/view?usp=sharing)
 and set the path in `yolo2-pytorch/cfgs/exps/darknet19_exp1.py`.
 
-7. (optional) Training with TensorBoard.
-
-    To use the TensorBoard, 
-    set `use_tensorboard = True` in `yolo2-pytorch/cfgs/config.py`
-    and install TensorboardX (https://github.com/lanpa/tensorboard-pytorch).
-    Tensorboard log will be saved in `training/runs`.
-
-
 6. Run the training program: `python train.py`.
 
-
-## Evaluation
-
-Set the path of the `trained_model` in `yolo2-pytorch/cfgs/config.py`.
-```bash
-cd faster_rcnn_pytorch
-mkdir output
-python test.py
-```
 ## Training on your own data
 
 The forward pass requires that you supply 4 arguments to the network:
