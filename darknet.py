@@ -12,6 +12,7 @@ from functools import partial
 
 from multiprocessing import Pool
 
+#follow tiny yolo structure in PCN, adjust yolo train
 
 def _make_layers(in_channels, net_cfg):
     layers = []
@@ -172,8 +173,9 @@ class Darknet19(nn.Module):
         # linear
         out_channels = cfg.num_anchors * (cfg.num_classes + 5)
         self.conv5 = net_utils.Conv2d(c4, out_channels, 1, 1, relu=False)
+        
         self.global_average_pool = nn.AvgPool2d((1, 1))
-
+        
         # train
         self.bbox_loss = None
         self.iou_loss = None
@@ -192,7 +194,9 @@ class Darknet19(nn.Module):
         conv1s_reorg = self.reorg(conv1s)
         cat_1_3 = torch.cat([conv1s_reorg, conv3], 1)
         conv4 = self.conv4(cat_1_3)
+        print('conv4 ', conv4.size())
         conv5 = self.conv5(conv4)   # batch_size, out_channels, h, w
+        #print('conv5: ', conv5.size())
         global_average_pool = self.global_average_pool(conv5)
 
         # for detection
