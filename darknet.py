@@ -223,41 +223,41 @@ class YOLOPCN(nn.Module):
         prob_pred = F.softmax(score_pred.view(-1, score_pred.size()[-1])).view_as(score_pred)  # noqa
 
         # for training
-        
-        bbox_pred_np = bbox_pred.data.cpu().numpy()
-        iou_pred_np = iou_pred.data.cpu().numpy()
-        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \
-            self._build_target(bbox_pred_np,
-                               gt_boxes,
-                               gt_classes,
-                               dontcare,
-                               iou_pred_np,
-                               size_index)
+        if self.training:
+            bbox_pred_np = bbox_pred.data.cpu().numpy()
+            iou_pred_np = iou_pred.data.cpu().numpy()
+            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \
+                self._build_target(bbox_pred_np,
+                                   gt_boxes,
+                                   gt_classes,
+                                   dontcare,
+                                   iou_pred_np,
+                                   size_index)
 
-        _boxes = net_utils.np_to_variable(_boxes)
-        _ious = net_utils.np_to_variable(_ious)
-        _classes = net_utils.np_to_variable(_classes)
-        box_mask = net_utils.np_to_variable(_box_mask,
+            _boxes = net_utils.np_to_variable(_boxes)
+            _ious = net_utils.np_to_variable(_ious)
+            _classes = net_utils.np_to_variable(_classes)
+            box_mask = net_utils.np_to_variable(_box_mask,
                                                 dtype=torch.FloatTensor)
        # print(box_mask)
-        iou_mask = net_utils.np_to_variable(_iou_mask,
+            iou_mask = net_utils.np_to_variable(_iou_mask,
                                                 dtype=torch.FloatTensor)
-        class_mask = net_utils.np_to_variable(_class_mask,
+            class_mask = net_utils.np_to_variable(_class_mask,
                                                   dtype=torch.FloatTensor)
             # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
-        box_mask = box_mask.expand_as(_boxes)
+            box_mask = box_mask.expand_as(_boxes)
 
  #           self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
   #          self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
 
-        class_mask = class_mask.expand_as(prob_pred)
+            class_mask = class_mask.expand_as(prob_pred)
 #            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
             #final_loss = (self.bbox_loss+self.iou_loss+self.cls_loss)
             #print(self.bbox_loss,self.iou_loss,self.cls_loss)
             #print('dfg',final_loss)
-        return bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes
-#        else:  
- #           return bbox_pred, iou_pred, prob_pred
+            return bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes
+        else:  
+            return bbox_pred, iou_pred, prob_pred
 
     def _build_target(self, bbox_pred_np, gt_boxes, gt_classes, dontcare,
                       iou_pred_np, size_index):

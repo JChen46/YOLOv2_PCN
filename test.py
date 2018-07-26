@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import argparse
 
-from darknet import Darknet19
+from darknet import *
 import utils.yolo as yolo_utils
 import utils.network as net_utils
 from utils.timer import Timer
@@ -24,7 +24,7 @@ args = parser.parse_args()
 imdb_name = cfg.imdb_test
 # trained_model = cfg.trained_model
 trained_model = os.path.join(cfg.train_output_dir,
-                             'darknet19_voc07trainval_exp3_73.h5')
+                             'darknet19_voc07trainval_exp3_100.h5')
 output_dir = cfg.test_output_dir
 
 max_per_image = 300
@@ -128,7 +128,7 @@ if __name__ == '__main__':
                       yolo_utils.preprocess_test,
                       processes=1, shuffle=False, dst_size=cfg.multi_scale_inp_size)
 
-    net = Darknet19()
+    net = YOLOPCN()
     net_utils.load_net(trained_model, net)
 
     net.cuda()
