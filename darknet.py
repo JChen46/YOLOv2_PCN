@@ -137,41 +137,49 @@ def _process_batch(data, size_index):
     return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask
 
 
-class Darknet19(nn.Module):
-    def __init__(self):
-        super(Darknet19, self).__init__()
+class PcConvRes(nn.Module):
+    def __init__(self, inchan, outchan, kernel_size=3, stride=1, padding=1, cls=0, bias=False):
+        super().__init__()
+        self.FFconv = nn.Conv2d(inchan, outchan, kernel_size, stride, padding, bias=bias)
+        self.FBconv = nn.ConvTranspose2d(outchan, inchan, kernel_size, stride, padding, bias=bias)
+        self.b0 = nn.ParameterList([nn.Parameter(torch.zeros(1,outchan,1,1))])
+        self.relu = nn.ReLU(inplace=True)
+        self.cls = cls
+        self.shortcut = nn.Conv2d(inchan, outchan, kernel_size=1, stride=1, bias=False)
 
-        net_cfgs = [
-            # conv1s
-            [(32, 3)],
-            ['M', (64, 3)],
-            ['M', (128, 3), (64, 1), (128, 3)],
-            ['M', (256, 3), (128, 1), (256, 3)],
-            ['M', (512, 3), (256, 1), (512, 3), (256, 1), (512, 3)],
-            # conv2
-            ['M', (1024, 3), (512, 1), (1024, 3), (512, 1), (1024, 3)],
-            # ------------
-            # conv3
-            [(1024, 3), (1024, 3)],
-            # conv4
-            [(1024, 3)]
-        ]
+    def forward(self, x):
+        y = self.relu(self.FFconv(x))
+        b0 = F.relu(self.b0[0]+1.0).expand_as(y)
+        for _ in range(self.cls):
+            y = self.FFconv(self.relu(x - self.FBconv(y)))*b0 + y
+        y = y + self.shortcut(x)
+        return y
 
-        # darknet
-        self.conv1s, c1 = _make_layers(3, net_cfgs[0:5])
-        self.conv2, c2 = _make_layers(c1, net_cfgs[5])
-        # ---
-        self.conv3, c3 = _make_layers(c2, net_cfgs[6])
+class YOLOPCN(nn.Module):
+    def __init__(self, num_classes=10, cls=0, Tied = False):
+        super().__init__()
+        self.ics = [3,  32, 64, 64, 128, 256, 512, 1024] # input chanels
+        self.ocs = [32, 64, 64, 128, 256, 512, 1024, 1024] # output chanels
+        self.maxpool = [False, True, False, True, True, True, True, False] # downsample flag
+        self.cls = cls # num of time steps
+        self.nlays = len(self.ics)
 
-        stride = 2
-        # stride*stride times the channels of conv1s
-        self.reorg = ReorgLayer(stride=2)
-        # cat [conv1s, conv3]
-        self.conv4, c4 = _make_layers((c1*(stride*stride) + c3), net_cfgs[7])
+        self.baseconv = PcConvRes(self.ics[0], self.ocs[0], cls=self.cls)
+        # construct PC layers
+        if Tied == False:
+            self.PcConvs = nn.ModuleList([PcConvRes(self.ics[i], self.ocs[i], cls=self.cls) for i in range(self.nlays)])
+        else:
+            self.PcConvs = nn.ModuleList([PcConvResTied(self.ics[i], self.ocs[i], cls=self.cls) for i in range(self.nlays)])
+        self.BNs = nn.ModuleList([nn.BatchNorm2d(self.ics[i]) for i in range(self.nlays)])
+        # Linear layer
+ #       self.linear = nn.Linear(self.ocs[-1], num_classes)
+        self.maxpool2d = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.relu = nn.ReLU(inplace=True)
+        self.BNend = nn.BatchNorm2d(self.ocs[-1])
 
         # linear
         out_channels = cfg.num_anchors * (cfg.num_classes + 5)
-        self.conv5 = net_utils.Conv2d(c4, out_channels, 1, 1, relu=False)
+        self.conv5 = net_utils.Conv2d(1024, out_channels, 1, 1, relu=False)
         self.global_average_pool = nn.AvgPool2d((1, 1))
 
         # train
@@ -186,14 +194,14 @@ class Darknet19(nn.Module):
 
     def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
                 size_index=0):
-        conv1s = self.conv1s(im_data)
-        conv2 = self.conv2(conv1s)
-        conv3 = self.conv3(conv2)
-        conv1s_reorg = self.reorg(conv1s)
-        cat_1_3 = torch.cat([conv1s_reorg, conv3], 1)
-        conv4 = self.conv4(cat_1_3)
-        conv5 = self.conv5(conv4)   # batch_size, out_channels, h, w
-        global_average_pool = self.global_average_pool(conv5)
+        x = self.baseconv(im_data)
+        for i in range(1,self.nlays):
+            x = self.BNs[i](x)
+            x = self.PcConvs[i](x)  # ReLU + Conv
+            if self.maxpool[i]:
+                x = self.maxpool2d(x)
+        x = self.conv5(x)   # batch_size, out_channels, h, w
+        global_average_pool = self.global_average_pool(x)
 
         # for detection
         # bsize, c, h, w -> bsize, h, w, c ->
@@ -208,45 +216,48 @@ class Darknet19(nn.Module):
         xy_pred = F.sigmoid(global_average_pool_reshaped[:, :, :, 0:2])
         wh_pred = torch.exp(global_average_pool_reshaped[:, :, :, 2:4])
         bbox_pred = torch.cat([xy_pred, wh_pred], 3)
+        #print(bbox_pred)
         iou_pred = F.sigmoid(global_average_pool_reshaped[:, :, :, 4:5])
 
         score_pred = global_average_pool_reshaped[:, :, :, 5:].contiguous()
         prob_pred = F.softmax(score_pred.view(-1, score_pred.size()[-1])).view_as(score_pred)  # noqa
 
         # for training
-        if self.training:
-            bbox_pred_np = bbox_pred.data.cpu().numpy()
-            iou_pred_np = iou_pred.data.cpu().numpy()
-            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \
-                self._build_target(bbox_pred_np,
-                                   gt_boxes,
-                                   gt_classes,
-                                   dontcare,
-                                   iou_pred_np,
-                                   size_index)
+        
+        bbox_pred_np = bbox_pred.data.cpu().numpy()
+        iou_pred_np = iou_pred.data.cpu().numpy()
+        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \
+            self._build_target(bbox_pred_np,
+                               gt_boxes,
+                               gt_classes,
+                               dontcare,
+                               iou_pred_np,
+                               size_index)
 
-            _boxes = net_utils.np_to_variable(_boxes)
-            _ious = net_utils.np_to_variable(_ious)
-            _classes = net_utils.np_to_variable(_classes)
-            box_mask = net_utils.np_to_variable(_box_mask,
+        _boxes = net_utils.np_to_variable(_boxes)
+        _ious = net_utils.np_to_variable(_ious)
+        _classes = net_utils.np_to_variable(_classes)
+        box_mask = net_utils.np_to_variable(_box_mask,
                                                 dtype=torch.FloatTensor)
-            iou_mask = net_utils.np_to_variable(_iou_mask,
+       # print(box_mask)
+        iou_mask = net_utils.np_to_variable(_iou_mask,
                                                 dtype=torch.FloatTensor)
-            class_mask = net_utils.np_to_variable(_class_mask,
+        class_mask = net_utils.np_to_variable(_class_mask,
                                                   dtype=torch.FloatTensor)
-
-            num_boxes = sum((len(boxes) for boxes in gt_boxes))
-
             # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
-            box_mask = box_mask.expand_as(_boxes)
+        box_mask = box_mask.expand_as(_boxes)
 
-            self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-            self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+ #           self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+  #          self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
 
-            class_mask = class_mask.expand_as(prob_pred)
-            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
-
-        return bbox_pred, iou_pred, prob_pred
+        class_mask = class_mask.expand_as(prob_pred)
+#            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
+            #final_loss = (self.bbox_loss+self.iou_loss+self.cls_loss)
+            #print(self.bbox_loss,self.iou_loss,self.cls_loss)
+            #print('dfg',final_loss)
+        return bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes
+#        else:  
+ #           return bbox_pred, iou_pred, prob_pred
 
     def _build_target(self, bbox_pred_np, gt_boxes, gt_classes, dontcare,
                       iou_pred_np, size_index):
