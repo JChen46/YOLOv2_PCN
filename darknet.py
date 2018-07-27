@@ -181,16 +181,7 @@ class YOLOPCN(nn.Module):
         out_channels = cfg.num_anchors * (cfg.num_classes + 5)
         self.conv5 = net_utils.Conv2d(1024, out_channels, 1, 1, relu=False)
         self.global_average_pool = nn.AvgPool2d((1, 1))
-
-        # train
-        self.bbox_loss = None
-        self.iou_loss = None
-        self.cls_loss = None
         self.pool = Pool(processes=10)
-
-    @property
-    def loss(self):
-        return self.bbox_loss + self.iou_loss + self.cls_loss
 
     def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
                 size_index=0):
@@ -244,7 +235,7 @@ class YOLOPCN(nn.Module):
                                                 dtype=torch.FloatTensor)
             class_mask = net_utils.np_to_variable(_class_mask,
                                                   dtype=torch.FloatTensor)
-            # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
+            #_boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
             box_mask = box_mask.expand_as(_boxes)
 
  #           self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
@@ -305,7 +296,165 @@ class YOLOPCN(nn.Module):
                     param = param.permute(3, 2, 0, 1)
                 own_dict[key].copy_(param)
 
+class Darknet19(nn.Module):
+    def __init__(self):
+        super(Darknet19, self).__init__()
 
+        net_cfgs = [
+            # conv1s
+            [(32, 3)],
+            ['M', (64, 3)],
+            ['M', (128, 3), (64, 1), (128, 3)],
+            ['M', (256, 3), (128, 1), (256, 3)],
+            ['M', (512, 3), (256, 1), (512, 3), (256, 1), (512, 3)],
+            # conv2
+            ['M', (1024, 3), (512, 1), (1024, 3), (512, 1), (1024, 3)],
+            # ------------
+            # conv3
+            [(1024, 3), (1024, 3)],
+            # conv4
+            [(1024, 3)]
+        ]
+
+        # darknet
+        self.conv1s, c1 = _make_layers(3, net_cfgs[0:5])
+        self.conv2, c2 = _make_layers(c1, net_cfgs[5])
+        # ---
+        self.conv3, c3 = _make_layers(c2, net_cfgs[6])
+
+        stride = 2
+        # stride*stride times the channels of conv1s
+        self.reorg = ReorgLayer(stride=2)
+        # cat [conv1s, conv3]
+        self.conv4, c4 = _make_layers((c1*(stride*stride) + c3), net_cfgs[7])
+
+        # linear
+        out_channels = cfg.num_anchors * (cfg.num_classes + 5)
+        self.conv5 = net_utils.Conv2d(c4, out_channels, 1, 1, relu=False)
+        self.global_average_pool = nn.AvgPool2d((1, 1))
+        self.bbox_loss = None
+        self.iou_loss = None
+        self.cls_loss = None
+        self.pool = Pool(processes=10)
+
+    @property
+    def loss(self):
+        return self.bbox_loss + self.iou_loss + self.cls_loss
+
+    def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
+                size_index=0):
+        conv1s = self.conv1s(im_data)
+        conv2 = self.conv2(conv1s)
+        conv3 = self.conv3(conv2)
+        conv1s_reorg = self.reorg(conv1s)
+        cat_1_3 = torch.cat([conv1s_reorg, conv3], 1)
+        conv4 = self.conv4(cat_1_3)
+        conv5 = self.conv5(conv4)   # batch_size, out_channels, h, w
+        global_average_pool = self.global_average_pool(conv5)
+
+        # for detection
+        # bsize, c, h, w -> bsize, h, w, c ->
+        #                   bsize, h x w, num_anchors, 5+num_classes
+        bsize, _, h, w = global_average_pool.size()
+        # assert bsize == 1, 'detection only support one image per batch'
+        global_average_pool_reshaped = \
+            global_average_pool.permute(0, 2, 3, 1).contiguous().view(bsize,
+                                                                      -1, cfg.num_anchors, cfg.num_classes + 5)  # noqa
+
+        # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
+        xy_pred = F.sigmoid(global_average_pool_reshaped[:, :, :, 0:2])
+        wh_pred = torch.exp(global_average_pool_reshaped[:, :, :, 2:4])
+        bbox_pred = torch.cat([xy_pred, wh_pred], 3)
+        #print(bbox_pred)
+        iou_pred = F.sigmoid(global_average_pool_reshaped[:, :, :, 4:5])
+
+        score_pred = global_average_pool_reshaped[:, :, :, 5:].contiguous()
+        prob_pred = F.softmax(score_pred.view(-1, score_pred.size()[-1])).view_as(score_pred)  # noqa
+
+        # for training
+        if self.training:
+            bbox_pred_np = bbox_pred.data.cpu().numpy()
+            iou_pred_np = iou_pred.data.cpu().numpy()
+            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \
+                self._build_target(bbox_pred_np,
+                                   gt_boxes,
+                                   gt_classes,
+                                   dontcare,
+                                   iou_pred_np,
+                                   size_index)
+
+            _boxes = net_utils.np_to_variable(_boxes)
+            _ious = net_utils.np_to_variable(_ious)
+            _classes = net_utils.np_to_variable(_classes)
+            box_mask = net_utils.np_to_variable(_box_mask,
+                                                dtype=torch.FloatTensor)
+       # print(box_mask)
+            iou_mask = net_utils.np_to_variable(_iou_mask,
+                                                dtype=torch.FloatTensor)
+            class_mask = net_utils.np_to_variable(_class_mask,
+                                                  dtype=torch.FloatTensor)
+
+            num_boxes = sum((len(boxes) for boxes in gt_boxes))
+            # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
+            box_mask = box_mask.expand_as(_boxes)
+
+            self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+            self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+
+            class_mask = class_mask.expand_as(prob_pred)
+            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
+            #final_loss = (self.bbox_loss+self.iou_loss+self.cls_loss)
+            #print(self.bbox_loss,self.iou_loss,self.cls_loss)
+            #print('dfg',final_loss)
+            return bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes
+        else:  
+            return bbox_pred, iou_pred, prob_pred
+
+    def _build_target(self, bbox_pred_np, gt_boxes, gt_classes, dontcare,
+                      iou_pred_np, size_index):
+        """
+        :param bbox_pred: shape: (bsize, h x w, num_anchors, 4) :
+                          (sig(tx), sig(ty), exp(tw), exp(th))
+        """
+
+        bsize = bbox_pred_np.shape[0]
+
+        targets = self.pool.map(partial(_process_batch, size_index=size_index),
+                                ((bbox_pred_np[b], gt_boxes[b],
+                                  gt_classes[b], dontcare[b], iou_pred_np[b])
+                                 for b in range(bsize)))
+
+        _boxes = np.stack(tuple((row[0] for row in targets)))
+        _ious = np.stack(tuple((row[1] for row in targets)))
+        _classes = np.stack(tuple((row[2] for row in targets)))
+        _box_mask = np.stack(tuple((row[3] for row in targets)))
+        _iou_mask = np.stack(tuple((row[4] for row in targets)))
+        _class_mask = np.stack(tuple((row[5] for row in targets)))
+
+        return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask
+
+    def load_from_npz(self, fname, num_conv=None):
+        dest_src = {'conv.weight': 'kernel', 'conv.bias': 'biases',
+                    'bn.weight': 'gamma', 'bn.bias': 'biases',
+                    'bn.running_mean': 'moving_mean',
+                    'bn.running_var': 'moving_variance'}
+        params = np.load(fname)
+        own_dict = self.state_dict()
+        keys = list(own_dict.keys())
+
+        for i, start in enumerate(range(0, len(keys), 5)):
+            if num_conv is not None and i >= num_conv:
+                break
+            end = min(start+5, len(keys))
+            for key in keys[start:end]:
+                list_key = key.split('.')
+                ptype = dest_src['{}.{}'.format(list_key[-2], list_key[-1])]
+                src_key = '{}-convolutional/{}:0'.format(i, ptype)
+                print((src_key, own_dict[key].size(), params[src_key].shape))
+                param = torch.from_numpy(params[src_key])
+                if ptype == 'kernel':
+                    param = param.permute(3, 2, 0, 1)
+                own_dict[key].copy_(param)
 if __name__ == '__main__':
     net = Darknet19()
     # net.load_from_npz('models/yolo-voc.weights.npz')
