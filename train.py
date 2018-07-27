@@ -2,7 +2,7 @@ import os
 import torch
 import datetime
 
-from darknet import Darknet19
+from darknet import *
 #testing
 from datasets.pascal_voc import VOCDataset
 import utils.yolo as yolo_utils
@@ -16,6 +16,11 @@ try:
 except ImportError:
     SummaryWriter = None
 
+def myloss(bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes, num_boxes):
+    bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+    iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+    cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # n
+    return bbox_loss,iou_loss,cls_loss,bbox_loss+iou_loss+cls_loss
 
 # data loader
 imdb = VOCDataset(cfg.imdb_train, cfg.DATA_DIR, cfg.train_batch_size,
@@ -24,14 +29,15 @@ imdb = VOCDataset(cfg.imdb_train, cfg.DATA_DIR, cfg.train_batch_size,
 # dst_size=cfg.inp_size)
 print('load data succ...')
 
-net = Darknet19()
+net = YOLOPCN(cls = 0)
 # net_utils.load_net(cfg.trained_model, net)
 # pretrained_model = os.path.join(cfg.train_output_dir,
 #     'darknet19_voc07trainval_exp1_63.h5')
 # pretrained_model = cfg.trained_model
 # net_utils.load_net(pretrained_model, net)
-net.load_from_npz(cfg.pretrained_model, num_conv=18)
-net.cuda()
+#net.load_from_npz(cfg.pretrained_model, num_conv=18)
+#net.cuda()
+net = torch.nn.DataParallel(net).cuda()
 net.train()
 print('load net succ...')
 
@@ -67,25 +73,29 @@ for step in range(start_epoch * imdb.batch_per_epoch,
     dontcare = batch['dontcare']
     orgin_im = batch['origin_im']
 
+    num_boxes = sum((len(boxes) for boxes in gt_boxes))
+
     # forward
     im_data = net_utils.np_to_variable(im,
                                        is_cuda=True,
                                        volatile=False).permute(0, 3, 1, 2)
-    bbox_pred, iou_pred, prob_pred = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
-
+ #   bbox_pred, iou_pred, prob_pred = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
+    bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes  = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
     # backward
-    loss = net.loss
+#    loss = net.loss
+    bbox_loss,iou_loss,cls_loss,loss = myloss(bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask,_boxes, _ious, _classes, num_boxes)
+  #  print(bbox_loss,'iouloss: ',iou_loss,' clsloss:',cls_loss,' trainloss:',loss)
     if torch.__version__.startswith('0.3'):
         bbox_loss += net.bbox_loss.data.cpu().numpy()[0]
         iou_loss += net.iou_loss.data.cpu().numpy()[0]
         cls_loss += net.cls_loss.data.cpu().numpy()[0]
         train_loss += loss.data.cpu().numpy()[0]
     else:
-        bbox_loss += float(net.bbox_loss.data.cpu().numpy())
-        iou_loss += float(net.iou_loss.data.cpu().numpy())
-        cls_loss += float(net.cls_loss.data.cpu().numpy())
+        bbox_loss += float(bbox_loss.data.cpu().numpy())
+        iou_loss += float(iou_loss.data.cpu().numpy())
+        cls_loss += float(cls_loss.data.cpu().numpy())
         train_loss += float(loss.data.cpu().numpy())
-
+        #print(bbox_loss,'iouloss: ',iou_loss,' clsloss:',cls_loss,' trainloss:',train_loss)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
