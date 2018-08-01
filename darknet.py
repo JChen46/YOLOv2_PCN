@@ -183,6 +183,13 @@ class YOLOPCN(nn.Module):
         self.global_average_pool = nn.AvgPool2d((1, 1))
         self.pool = Pool(processes=10)
 
+        self.bbox_loss = None
+        self.iou_loss = None
+        self.cls_loss = None
+    @property
+    def loss(self):
+        return self.bbox_loss + self.iou_loss + self.cls_loss
+
     def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
                 size_index=0):
         x = self.baseconv(im_data)
@@ -228,6 +235,9 @@ class YOLOPCN(nn.Module):
             _boxes = net_utils.np_to_variable(_boxes)
             _ious = net_utils.np_to_variable(_ious)
             _classes = net_utils.np_to_variable(_classes)
+
+            num_boxes = sum((len(boxes) for boxes in gt_boxes))
+
             box_mask = net_utils.np_to_variable(_box_mask,
                                                 dtype=torch.FloatTensor)
        # print(box_mask)
@@ -238,11 +248,11 @@ class YOLOPCN(nn.Module):
             #_boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
             box_mask = box_mask.expand_as(_boxes)
 
- #           self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-  #          self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+            self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+            self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
 
             class_mask = class_mask.expand_as(prob_pred)
-#            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
+            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
             #final_loss = (self.bbox_loss+self.iou_loss+self.cls_loss)
             #print(self.bbox_loss,self.iou_loss,self.cls_loss)
             #print('dfg',final_loss)
