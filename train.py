@@ -1,6 +1,7 @@
 import os
 import torch
 import datetime
+import argparse
 
 from collections import OrderedDict
 
@@ -14,13 +15,9 @@ import cfgs.config as cfg
 from random import randint
 from test import *
 
+print('Arguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n    filenum: ', 'darknet19_voc07trainval_exp3_{}.h5'.format(args.filenum), '\n') #printing out parse arguments
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('--multi', default=False, help='for multi GPU processing')
-parser.add_argument('--cls', default=0, type=int, help='number of cycles')
-
-args = parser.parse_args()
-
+cfg.set_train_directory(args.trainedfolder) #sends trained folder name to config.py #duplicate from test
 
 try:
     from tensorboardX import SummaryWriter
@@ -48,25 +45,28 @@ net = YOLOPCN(cls = args.cls)
 # net_utils.load_net(pretrained_model, net)
 #net.load_from_npz(cfg.pretrained_model, num_conv=18)
 #net.cuda()
-model_dict = net.state_dict()
-resume = './checkpoint/checkpoint_cls0.pth.tar'
 
-print("=> loading checkpoint '{}'".format(resume))
-checkpoint = torch.load(resume)
-args.start_epoch = checkpoint['epoch']
-best_prec1 = checkpoint['best_prec1']
-state_dict = checkpoint['state_dict']
-del state_dict['module.linear.weight']
-del state_dict['module.linear.bias']
+if args.pretrained: #train from scratch or not
+    model_dict = net.state_dict()
+    resume = './checkpoint/' + args.weightfile
 
-new_state_dict = OrderedDict()
-for k, value in state_dict.items():
-    k = k[7:]
-    print(k)
-    new_state_dict[k]=value
-model_dict.update(new_state_dict)
-net.load_state_dict(model_dict)
-if args.multi:
+    print("=> loading checkpoint '{}'".format(resume))
+    checkpoint = torch.load(resume)
+    args.start_epoch = checkpoint['epoch']
+    best_prec1 = checkpoint['best_prec1']
+    state_dict = checkpoint['state_dict']
+    del state_dict['module.linear.weight']
+    del state_dict['module.linear.bias']
+
+    new_state_dict = OrderedDict()
+    for k, value in state_dict.items():
+        k = k[7:]
+        #print(k)
+        new_state_dict[k]=value
+    model_dict.update(new_state_dict)
+    net.load_state_dict(model_dict)
+
+if args.multi: #if multi GPU
     net = torch.nn.DataParallel(net).cuda()
 else:
     net = net.cuda() # for single GPU
@@ -75,7 +75,8 @@ net.train()
 
 # optimizer
 start_epoch = 0
-lr = cfg.init_learning_rate
+##lr = cfg.init_learning_rate
+lr = args.lr                                                             #sets lr as parser argument
 optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=cfg.momentum,
                             weight_decay=cfg.weight_decay)
 
@@ -192,6 +193,7 @@ for step in range(start_epoch * imdb.batch_per_epoch,
                                  '{}_{}.h5'.format(cfg.exp_name, imdb.epoch))
             net_utils.save_net(save_name, net)
             print(('save model: {}'.format(save_name)))
+            print('\nArguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n') #printing out parse arguments
         step_cnt = 0
    
 #    test_net(net, imdb2, max_per_image, thresh, vis)

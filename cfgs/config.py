@@ -1,7 +1,12 @@
 import os
+
 from .config_voc import *  # noqa
 from .exps.darknet19_exp1 import *  # noqa
 
+traindirectory = 'temp_training'
+def set_train_directory(directory): #sets trained folder name in TRAIN_DIR
+    traindirectory = directory
+    print('DIRECTORY IS NOW ', traindirectory)
 
 def mkdir(path, max_depth=3):
     parent, child = os.path.split(path)
@@ -60,12 +65,15 @@ colors = [_to_color(x, base) for x in range(num_classes)]
 thresh = 0.3
 
 
+
+
+
 # dir config
 ############################
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 MODEL_DIR = os.path.join(ROOT_DIR, 'models')
-TRAIN_DIR = os.path.join(MODEL_DIR, 'training')
+TRAIN_DIR = os.path.join(MODEL_DIR, traindirectory)
 TEST_DIR = os.path.join(MODEL_DIR, 'testing')
 
 trained_model = os.path.join(MODEL_DIR, h5_fname)
