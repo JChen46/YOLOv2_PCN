@@ -155,16 +155,28 @@ class PcConvRes(nn.Module):
         y = y + self.shortcut(x)
         return y
 
+class features2(nn.Module):
+    def __init__(self, inchan, outchan, kernel_size=7, stride=2, padding=3, bias=False):
+        super().__init__()
+        self.conv = nn.Conv2d(inchan, outchan, kernel_size, stride, padding, bias=bias)
+        self.featBN = nn.BatchNorm2d(outchan)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        y = self.relu(self.featBN(self.conv(x)))
+        return y
+
+
 class YOLOPCN(nn.Module):
     def __init__(self, num_classes=10, cls=0, Tied = False):
         super().__init__()
-        self.ics = [3,  32, 64, 64, 128, 256, 512, 1024] # input chanels
-        self.ocs = [32, 64, 64, 128, 256, 512, 1024, 1024] # output chanels
-        self.maxpool = [False, True, False, True, True, True, True, False] # downsample flag
+        self.ics = [3,   64,   64,  128,  128,  128,  128,  256,  256,  256,  512,  512] # input chanels
+        self.ocs = [64,  64,  128,  128,  128,  128,  256,  256,  256,  512,  512,  512] # output chanels
+        self.maxpool = [True, False, True, False, True, False, True, False, False, True, False, False] # downsample flag
         self.cls = cls # num of time steps
         self.nlays = len(self.ics)
 
-        self.baseconv = PcConvRes(self.ics[0], self.ocs[0], cls=self.cls)
+        self.baseconv = features2(self.ics[0], self.ocs[0])
         # construct PC layers
         if Tied == False:
             self.PcConvs = nn.ModuleList([PcConvRes(self.ics[i], self.ocs[i], cls=self.cls) for i in range(self.nlays)])
@@ -172,28 +184,35 @@ class YOLOPCN(nn.Module):
             self.PcConvs = nn.ModuleList([PcConvResTied(self.ics[i], self.ocs[i], cls=self.cls) for i in range(self.nlays)])
         self.BNs = nn.ModuleList([nn.BatchNorm2d(self.ics[i]) for i in range(self.nlays)])
         # Linear layer
- #       self.linear = nn.Linear(self.ocs[-1], num_classes)
         self.maxpool2d = nn.MaxPool2d(kernel_size=2, stride=2)
         self.relu = nn.ReLU(inplace=True)
-        self.BNend = nn.BatchNorm2d(self.ocs[-1])
+        self.BNend = nn.BatchNorm2d(self.ocs[-1])      
 
         # linear
         out_channels = cfg.num_anchors * (cfg.num_classes + 5)
-        self.conv5 = net_utils.Conv2d(1024, out_channels, 1, 1, relu=False)
+        self.conv5 = net_utils.Conv2d(512, out_channels, 1, 1, relu=False)
         self.global_average_pool = nn.AvgPool2d((1, 1))
         self.pool = Pool(processes=10)
+
+        self.bbox_loss = None
+        self.iou_loss = None
+        self.cls_loss = None
+    @property
+    def loss(self):
+        return self.bbox_loss + self.iou_loss + self.cls_loss
 
     def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
                 size_index=0):
         x = self.baseconv(im_data)
-        for i in range(1,self.nlays):
+        for i in range(1, self.nlays):
             x = self.BNs[i](x)
             x = self.PcConvs[i](x)  # ReLU + Conv
             if self.maxpool[i]:
                 x = self.maxpool2d(x)
         x = self.conv5(x)   # batch_size, out_channels, h, w
+        
         global_average_pool = self.global_average_pool(x)
-
+        #print('after ', global_average_pool.size())
         # for detection
         # bsize, c, h, w -> bsize, h, w, c ->
         #                   bsize, h x w, num_anchors, 5+num_classes
@@ -228,6 +247,9 @@ class YOLOPCN(nn.Module):
             _boxes = net_utils.np_to_variable(_boxes)
             _ious = net_utils.np_to_variable(_ious)
             _classes = net_utils.np_to_variable(_classes)
+
+            num_boxes = sum((len(boxes) for boxes in gt_boxes))
+
             box_mask = net_utils.np_to_variable(_box_mask,
                                                 dtype=torch.FloatTensor)
        # print(box_mask)
@@ -238,11 +260,11 @@ class YOLOPCN(nn.Module):
             #_boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
             box_mask = box_mask.expand_as(_boxes)
 
- #           self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-  #          self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+            self.bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+            self.iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
 
             class_mask = class_mask.expand_as(prob_pred)
-#            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
+            self.cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
             #final_loss = (self.bbox_loss+self.iou_loss+self.cls_loss)
             #print(self.bbox_loss,self.iou_loss,self.cls_loss)
             #print('dfg',final_loss)
