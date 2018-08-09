@@ -18,7 +18,7 @@ parser.add_argument('--cls', default=1, type=int, help='(def:1) number of cycles
 parser.add_argument('--pretrained', default = True,type=bool, help='(def:True) loads pretrained model')
 parser.add_argument('--weightfile', default = 'checkpoint_cls1.pth.tar',type=str, help='(def:checkpoint_cls1.pth.tar) which weight file to train from')
 parser.add_argument('--lr', default = 0.001, type=float, help='(def:0.001) learning rate')
-parser.add_argument('--trainedfolder', default = 'training', type=str, help='(def:training) folder that contains the trained weight files')
+parser.add_argument('--trainedfolder', default = 'temp_training', type=str, help='(def:training) folder that contains the trained weight files')
 parser.add_argument('--filenum', default = 100, type=int, help='(def:100) weight file epoch number. Varies based on weight file name')
 parser.add_argument('--image_size_index', type=int, default=0,
                     metavar='image_size_index',
@@ -26,6 +26,18 @@ parser.add_argument('--image_size_index', type=int, default=0,
 args = parser.parse_args()
 
 cfg.set_train_directory(args.trainedfolder) #sends trained folder name to config.py
+
+#printing out parse arguments --------------------------------------------
+print('\nArguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n    filenum: ', 'darknet19_voc07trainval_exp3_{}.h5'.format(args.filenum), '\n') 
+
+#save mAP results to file -----------------------
+logpath = './logs'
+#if not os.path.isdir(checkpointpath):
+#    os.mkdir(checkpointpath)
+if not os.path.isdir(logpath):
+    os.mkdir(logpath)
+mapfile = open('./logs/testMAP.txt', 'w')
+
 
 # hyper-parameters
 # ------------
@@ -42,8 +54,10 @@ vis = False
 # ------------
 
 
-def test_net(net, imdb, max_per_image=300, thresh=0.5, vis=False):
+def test_net(net, imdb, gtboxes, gtclasses, dontcare, sizeindex, max_per_image=300, thresh=0.5, vis=False):
     num_images = imdb.num_images
+
+    print('sizeindex is ', sizeindex)
 
     # all detections are collected into:
     #    all_boxes[cls][image] = N x 5 array of detections in
@@ -56,6 +70,8 @@ def test_net(net, imdb, max_per_image=300, thresh=0.5, vis=False):
     det_file = os.path.join(output_dir, 'detections.pkl')
     size_index = args.image_size_index
 
+    loss_sum = 0.0
+
     for i in range(num_images):
 
         batch = imdb.next_batch(size_index=size_index)
@@ -64,7 +80,10 @@ def test_net(net, imdb, max_per_image=300, thresh=0.5, vis=False):
                                            volatile=True).permute(0, 3, 1, 2)
 
         _t['im_detect'].tic()
-        bbox_pred, iou_pred, prob_pred = net(im_data)
+
+        bbox_pred, iou_pred, prob_pred = net(im_data, gtboxes, gtclasses, dontcare, sizeindex, False)
+        #print('net.loss.data: ', net.loss.data) #same as FINAL LOSS, also this prints a million times
+        loss_sum += net.loss.data
 
         # to numpy
         bbox_pred = bbox_pred.data.cpu().numpy()
@@ -106,7 +125,7 @@ def test_net(net, imdb, max_per_image=300, thresh=0.5, vis=False):
                     all_boxes[j][i] = all_boxes[j][i][keep, :]
         nms_time = _t['misc'].toc()
 
-        if i % 20 == 0:
+        if i % 1000 == 0: #changed to 1000
             print('im_detect: {:d}/{:d} {:.3f}s {:.3f}s'.format(i + 1, num_images, detect_time, nms_time))  # noqa
             _t['im_detect'].clear()
             _t['misc'].clear()
@@ -130,8 +149,16 @@ def test_net(net, imdb, max_per_image=300, thresh=0.5, vis=False):
     print('Evaluating detections')
     imdb.evaluate_detections(all_boxes, output_dir)
 
+    final_loss = loss_sum / (num_images)
 
-if __name__ == '__main__':
+    print('gotten: ', imdb.getmap) #writing mAP score to file
+    mapfile.write('%d,%f,%f\n' % (imdb.epoch, imdb.getmap,final_loss.item())) #epoch, map score, test loss
+
+    print('FINAL LOSS: ', final_loss.item())
+
+    print('trainedfolder: ', args.trainedfolder, '\nfilenum: ', args.filenum)
+#mapfile.close()
+if __name__ == '__main__': #Only does this if test is directly called from cmd line
     # data loader
     imdb = VOCDataset(imdb_name, cfg.DATA_DIR, cfg.batch_size,
                       yolo_utils.preprocess_test,
@@ -143,6 +170,8 @@ if __name__ == '__main__':
     net.cuda()
     net.eval()
 
-    test_net(net, imdb, max_per_image, thresh, vis)
+
+    test_net(net, imdb, max_per_image, thresh, vis, args.image_size_index)
 
     imdb.close()
+    

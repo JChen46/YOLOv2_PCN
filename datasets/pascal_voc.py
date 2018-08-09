@@ -17,6 +17,7 @@ from .voc_eval import voc_eval
 
 # from utils.yolo import preprocess_train
 
+global mapscore
 
 class VOCDataset(ImageDataset, Dataset):
     def __init__(self, imdb_name, datadir, batch_size, im_processor,
@@ -280,6 +281,8 @@ class VOCDataset(ImageDataset, Dataset):
                 with open(os.path.join(output_dir, cls + '_pr.pkl'), 'wb') as f:
                     pickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
         print(('Mean AP = {:.4f}'.format(np.mean(aps))))
+        global mapscore
+        mapscore = np.mean(aps) #added variable for mapscore
         print('~~~~~~~~')
         print('Results:')
         for ap in aps:
@@ -299,3 +302,7 @@ class VOCDataset(ImageDataset, Dataset):
                    else self._comp_id)
         return comp_id
 
+    @property #adding getter for mAP score
+    def getmap(self):
+        print('returning aps: ', mapscore)
+        return mapscore

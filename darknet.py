@@ -202,7 +202,7 @@ class YOLOPCN(nn.Module):
         return self.bbox_loss + self.iou_loss + self.cls_loss
 
     def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
-                size_index=0):
+                size_index=0, train=True):
         x = self.baseconv(im_data)
         for i in range(1, self.nlays):
             x = self.BNs[i](x)
@@ -233,7 +233,7 @@ class YOLOPCN(nn.Module):
         prob_pred = F.softmax(score_pred.view(-1, score_pred.size()[-1])).view_as(score_pred)  # noqa
 
         # for training
-        if self.training:
+        if train: #temporary
             bbox_pred_np = bbox_pred.data.cpu().numpy()
             iou_pred_np = iou_pred.data.cpu().numpy()
             _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \
@@ -364,7 +364,7 @@ class Darknet19(nn.Module):
         return self.bbox_loss + self.iou_loss + self.cls_loss
 
     def forward(self, im_data, gt_boxes=None, gt_classes=None, dontcare=None,
-                size_index=0):
+                size_index=0, train = True):
         conv1s = self.conv1s(im_data)
         conv2 = self.conv2(conv1s)
         conv3 = self.conv3(conv2)
@@ -394,7 +394,7 @@ class Darknet19(nn.Module):
         prob_pred = F.softmax(score_pred.view(-1, score_pred.size()[-1])).view_as(score_pred)  # noqa
 
         # for training
-        if self.training:
+        if train:
             bbox_pred_np = bbox_pred.data.cpu().numpy()
             iou_pred_np = iou_pred.data.cpu().numpy()
             _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = \

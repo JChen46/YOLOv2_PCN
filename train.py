@@ -19,6 +19,14 @@ print('Arguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pr
 
 cfg.set_train_directory(args.trainedfolder) #sends trained folder name to config.py #duplicate from test
 
+#save loss to file setup
+#-----------------------
+logpath = './logs'
+if not os.path.isdir(logpath):
+    os.mkdir(logpath)
+statfile = open('./logs/trainloss.txt', 'a')
+
+
 try:
     from tensorboardX import SummaryWriter
 except ImportError:
@@ -80,7 +88,7 @@ lr = args.lr                                                             #sets l
 optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=cfg.momentum,
                             weight_decay=cfg.weight_decay)
 
-# tensorboad
+# tensorboard
 use_tensorboard = cfg.use_tensorboard and SummaryWriter is not None
 # use_tensorboard = False
 if use_tensorboard:
@@ -110,8 +118,9 @@ iou_loss_sum = 0.0
 cls_loss_sum = 0.0     #cls = conditional class probability, prob detected object belong to class
 train_loss_sum = 0.0
 
-for step in range(start_epoch * imdb.batch_per_epoch,
-                  cfg.max_epoch * imdb.batch_per_epoch):
+#for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch_per_epoch):
+for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch_per_epoch): #performs max epochs
+
     t.tic()
     # batch
     batch = imdb.next_batch(size_index)
@@ -120,6 +129,7 @@ for step in range(start_epoch * imdb.batch_per_epoch,
     gt_classes = batch['gt_classes']
     dontcare = batch['dontcare']
     orgin_im = batch['origin_im']
+    
 
     num_boxes = sum((len(boxes) for boxes in gt_boxes))
 
@@ -127,7 +137,8 @@ for step in range(start_epoch * imdb.batch_per_epoch,
     im_data = net_utils.np_to_variable(im,
                                        is_cuda=True,
                                        volatile=False).permute(0, 3, 1, 2)
- #   bbox_pred, iou_pred, prob_pred = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
+    #bbox_pred, iou_pred, prob_pred = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
+    
     bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes  = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
     # backward
     if args.multi:
@@ -165,6 +176,9 @@ for step in range(start_epoch * imdb.batch_per_epoch,
                 iou_loss_sum, cls_loss_sum, duration,
                 str(datetime.timedelta(seconds=int((batch_per_epoch - step_cnt) * duration))))))  # noqa
 
+#save loss to file - epoch,loss
+        statfile.write('%d,%f\n' % (imdb.epoch, train_loss_sum))
+
         if summary_writer and step % cfg.log_interval == 0:
             summary_writer.add_scalar('loss_train', train_loss_sum, step)
             summary_writer.add_scalar('loss_bbox', bbox_loss_sum, step)
@@ -188,13 +202,16 @@ for step in range(start_epoch * imdb.batch_per_epoch,
                                         momentum=cfg.momentum,
                                         weight_decay=cfg.weight_decay)
 
-        if step % (10*imdb.batch_per_epoch) == 0:
+        if step % (20*imdb.batch_per_epoch) == 0: #save weights every 5 epochs
+#        if True: #for saving every epoch
             save_name = os.path.join(cfg.train_output_dir,
                                  '{}_{}.h5'.format(cfg.exp_name, imdb.epoch))
             net_utils.save_net(save_name, net)
             print(('save model: {}'.format(save_name)))
             print('\nArguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n') #printing out parse arguments
         step_cnt = 0
-   
+        test_net(net, imdb2, gt_boxes, gt_classes, dontcare, size_index, max_per_image, thresh, vis)
 #    test_net(net, imdb2, max_per_image, thresh, vis)
 
+statfile.close() #closing statfile
+mapfile.close()
