@@ -3,11 +3,12 @@ import cv2
 import numpy as np
 from torch.multiprocessing import Pool
 
-from darknet import Darknet19
+from darknet import *
 import utils.yolo as yolo_utils
 import utils.network as net_utils
 from utils.timer import Timer
 import cfgs.config as cfg
+from test import *
 
 # This prevents deadlocks in the data loader, caused by
 # some incompatibility between pytorch and cv2 multiprocessing.
@@ -26,14 +27,14 @@ def preprocess(fname):
 # hyper-parameters
 # npz_fname = 'models/yolo-voc.weights.npz'
 # h5_fname = 'models/yolo-voc.weights.h5'
-trained_model = cfg.trained_model
-# trained_model = os.path.join(
-#     cfg.train_output_dir, 'darknet19_voc07trainval_exp3_158.h5')
+#trained_model = cfg.trained_model
+trained_model = os.path.join(
+     cfg.train_output_dir, 'darknet19_voc07trainval_exp3_48.h5')
 thresh = 0.5
 im_path = 'demo'
 # ---
 
-net = Darknet19()
+net = YOLOPCN(cls = args.cls)				#
 net_utils.load_net(trained_model, net)
 # net.load_from_npz(npz_fname)
 # net_utils.save_net(h5_fname, net)
@@ -55,7 +56,7 @@ for i, (image, im_data) in enumerate(pool.imap(
     im_data = net_utils.np_to_variable(
         im_data, is_cuda=True, volatile=True).permute(0, 3, 1, 2)
     t_det.tic()
-    bbox_pred, iou_pred, prob_pred = net(im_data)
+    bbox_pred, iou_pred, prob_pred = net(im_data, train=False)
     det_time = t_det.toc()
     # to numpy
     bbox_pred = bbox_pred.data.cpu().numpy()
@@ -74,11 +75,14 @@ for i, (image, im_data) in enumerate(pool.imap(
                              (int(1000. *
                                   float(im2show.shape[1]) / im2show.shape[0]),
                               1000))
-    cv2.imshow('test', im2show)
+    ##cv2.imshow('test', im2show)
+
+    status = cv2.imwrite('./demo/out/testingdemo{}.jpg'.format(i), im2show)
+    print('Image written to system: ', status)
 
     total_time = t_total.toc()
     # wait_time = max(int(60 - total_time * 1000), 1)
-    cv2.waitKey(0)
+    ##cv2.waitKey(0)
 
     if i % 1 == 0:
         format_str = 'frame: %d, ' \
