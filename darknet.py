@@ -212,7 +212,7 @@ class YOLOPCN(nn.Module):
         x = self.conv5(x)   # batch_size, out_channels, h, w
         
         global_average_pool = self.global_average_pool(x)
-        #print('after ', global_average_pool.size())
+        ##print('after ', global_average_pool.size())
         # for detection
         # bsize, c, h, w -> bsize, h, w, c ->
         #                   bsize, h x w, num_anchors, 5+num_classes

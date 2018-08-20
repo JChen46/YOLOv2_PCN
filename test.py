@@ -18,8 +18,8 @@ parser.add_argument('--cls', default=1, type=int, help='(def:1) number of cycles
 parser.add_argument('--pretrained', default = True,type=bool, help='(def:True) loads pretrained model')
 parser.add_argument('--weightfile', default = 'checkpoint_cls1.pth.tar',type=str, help='(def:checkpoint_cls1.pth.tar) which weight file to train from')
 parser.add_argument('--lr', default = 0.001, type=float, help='(def:0.001) learning rate')
-parser.add_argument('--trainedfolder', default = 'temp_training', type=str, help='(def:training) folder that contains the trained weight files')
-parser.add_argument('--filenum', default = 100, type=int, help='(def:100) weight file epoch number. Varies based on weight file name')
+parser.add_argument('--trainedfolder', default = 'this_means_nothing', type=str, help='(def:training) folder that contains the trained weight files')
+parser.add_argument('--filenum', default = 0, type=int, help='(def:0) weight file epoch number. Varies based on weight file name')
 parser.add_argument('--image_size_index', type=int, default=0,
                     metavar='image_size_index',
                     help='setting images size index 0:320, 1:352, 2:384, 3:416, 4:448, 5:480, 6:512, 7:544, 8:576')
@@ -57,7 +57,7 @@ vis = False
 def test_net(net, imdb, gtboxes, gtclasses, dontcare, sizeindex, max_per_image=300, thresh=0.5, vis=False):
     num_images = imdb.num_images
 
-    print('sizeindex is ', sizeindex)
+    #print('sizeindex is ', sizeindex)
 
     # all detections are collected into:
     #    all_boxes[cls][image] = N x 5 array of detections in

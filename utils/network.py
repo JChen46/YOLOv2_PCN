@@ -63,7 +63,7 @@ def load_net(fname, net):
     import h5py
     h5f = h5py.File(fname, mode='r')
     for k, v in list(net.state_dict().items()):
-        k = 'module.' + k #
+        #k = 'module.' + k #
         param = torch.from_numpy(np.asarray(h5f[k]))
         v.copy_(param)
 

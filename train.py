@@ -148,10 +148,13 @@ for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch
         cls_loss_sum += float(cls_loss.data)
     else:
         loss = net.loss #for single GPU
-        bbox_loss_sum += float(net.bbox_loss.data) 
+        bbox_loss_sum += float(net.bbox_loss.data)
         iou_loss_sum += float(net.iou_loss.data)
         cls_loss_sum += float(net.cls_loss.data)
- 
+        ##print('loss type: ', loss.type())
+        ##bbox_loss1,iou_loss1,cls_loss1,loss1 = myloss(bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask,_boxes, _ious, _classes, num_boxes)
+        ##print(torch.equal(loss, loss1))
+        
 #    
 #    print(bbox_loss.data,net.bbox_loss.data)
   #  print(bbox_loss,'iouloss: ',iou_loss,' clsloss:',cls_loss,' trainloss:',loss)
@@ -202,11 +205,17 @@ for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch
                                         momentum=cfg.momentum,
                                         weight_decay=cfg.weight_decay)
 
-        if step % (20*imdb.batch_per_epoch) == 0: #save weights every 5 epochs
+        print('TESTING JUST NET')
+        test_net(net, imdb2, gt_boxes, gt_classes, dontcare, size_index, max_per_image, thresh, vis)
+
+        if True: ###step % (5*imdb.batch_per_epoch) == 0: #save weights every 5 epochs
 #        if True: #for saving every epoch
             save_name = os.path.join(cfg.train_output_dir,
                                  '{}_{}.h5'.format(cfg.exp_name, imdb.epoch))
             net_utils.save_net(save_name, net)
+            net_utils.load_net(save_name, net)
+            net.cuda()
+            net.eval()
             print(('save model: {}'.format(save_name)))
             print('\nArguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n') #printing out parse arguments
         step_cnt = 0
