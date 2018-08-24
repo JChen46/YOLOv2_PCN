@@ -51,6 +51,14 @@ class FC(nn.Module):
             x = self.relu(x)
         return x
 
+def fix_net(net, model_dict): ###
+    new_state_dict = OrderedDict()
+    for k, value in state_dict.items():
+        k = k[7:]
+        #print(value.size())
+        new_state_dict[k]=value
+    model_dict.update(new_state_dict)
+    net.load_state_dict(model_dict)
 
 def save_net(fname, net):
     import h5py
@@ -63,9 +71,17 @@ def load_net(fname, net):
     import h5py
     h5f = h5py.File(fname, mode='r')
     for k, v in list(net.state_dict().items()):
-        #k = 'module.' + k #
+        checkMulti = False
+        for key in h5f.keys():
+            #print(key)
+            if 'module.' in key:
+                checkMulti = True
+        if checkMulti:
+            k = 'module.' + k  #may need to uncomment when dealing with Multiple GPU trained weight files, eg. testing with demo
+        #print('k: ',k)
         param = torch.from_numpy(np.asarray(h5f[k]))
         v.copy_(param)
+    
 
 
 def load_pretrained_npy(faster_rcnn_model, fname):

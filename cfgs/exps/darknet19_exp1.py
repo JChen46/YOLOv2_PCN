@@ -23,4 +23,4 @@ iou_thresh = 0.6
 imdb_train = 'voc_2007_trainval'
 imdb_test = 'voc_2007_test'
 batch_size = 1
-train_batch_size = 16
+train_batch_size = 14

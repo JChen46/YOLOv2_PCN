@@ -1,12 +1,16 @@
 import os
+#import sys, inspect
 
 from .config_voc import *  # noqa
 from .exps.darknet19_exp1 import *  # noqa
 
-traindirectory = 'temp_training'
-def set_train_directory(directory): #sets trained folder name in TRAIN_DIR
+#sys.path.insert(1, os.path.join(sys.path[0], '..'))
+#from test import *
+traindirectory = 'PCNcls0_TT' #change the 'models/~~~' directory here
+
+def set_train_directory(directory): #sets trained folder name in TRAIN_DIR, doesn't work due to not being called during standalone testing?
     traindirectory = directory
-    print('DIRECTORY IS NOW ', traindirectory)
+    #print('DIRECTORY IS NOW ', traindirectory)
 
 def mkdir(path, max_depth=3):
     parent, child = os.path.split(path)
@@ -73,6 +77,7 @@ thresh = 0.3
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 MODEL_DIR = os.path.join(ROOT_DIR, 'models')
+print('DIRECTORY IS ', traindirectory)
 TRAIN_DIR = os.path.join(MODEL_DIR, traindirectory)
 TEST_DIR = os.path.join(MODEL_DIR, 'testing')
 

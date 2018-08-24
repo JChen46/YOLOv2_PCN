@@ -15,7 +15,7 @@ import cfgs.config as cfg
 from random import randint
 from test import *
 
-print('Arguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n    filenum: ', 'darknet19_voc07trainval_exp3_{}.h5'.format(args.filenum), '\n') #printing out parse arguments
+print('Arguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n    filenum: ', 'darknet19_voc07trainval_exp3_{}.h5'.format(args.filenum), '\n') #printing out parse arguments
 
 cfg.set_train_directory(args.trainedfolder) #sends trained folder name to config.py #duplicate from test
 
@@ -24,7 +24,7 @@ cfg.set_train_directory(args.trainedfolder) #sends trained folder name to config
 logpath = './logs'
 if not os.path.isdir(logpath):
     os.mkdir(logpath)
-statfile = open('./logs/trainloss.txt', 'a')
+statfile = open('./logs/trainloss_{}.txt'.format(cfg.traindirectory), 'a') #saves epoch and loss to a .txt file in '/logs', named based on the training directory folder name in config, may have issues for the testing mAP written file (in closing the file)
 
 
 try:
@@ -56,7 +56,7 @@ net = YOLOPCN(cls = args.cls)
 
 if args.pretrained: #train from scratch or not
     model_dict = net.state_dict()
-    resume = './checkpoint/' + args.weightfile
+    resume = './checkpoint/checkpoint_cls{}.pth.tar'.format(args.cls)
 
     print("=> loading checkpoint '{}'".format(resume))
     checkpoint = torch.load(resume)
@@ -66,10 +66,11 @@ if args.pretrained: #train from scratch or not
     del state_dict['module.linear.weight']
     del state_dict['module.linear.bias']
 
+    #new Dictionary modification moved to module in network.py
     new_state_dict = OrderedDict()
     for k, value in state_dict.items():
         k = k[7:]
-        #print(k)
+        #print(value.size())
         new_state_dict[k]=value
     model_dict.update(new_state_dict)
     net.load_state_dict(model_dict)
@@ -139,11 +140,12 @@ for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch
                                        volatile=False).permute(0, 3, 1, 2)
     #bbox_pred, iou_pred, prob_pred = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
     
-    bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes  = net(im_data, gt_boxes, gt_classes, dontcare, size_index)
+    bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask, _boxes, _ious, _classes  = net(im_data, gt_boxes, gt_classes, dontcare, size_index) #part of darknet's YOLOPCN - returns extra variables, related to why standalone testing doesn't work, as it does not have these variables that are a result of training
+
     # backward
     if args.multi:
         bbox_loss,iou_loss,cls_loss,loss = myloss(bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask,_boxes, _ious, _classes, num_boxes) #multi-GPU
-        bbox_loss_sum += float(bbox_loss.data) #added net. before
+        bbox_loss_sum += float(bbox_loss.data) #previously had .net before
         iou_loss_sum += float(iou_loss.data)
         cls_loss_sum += float(cls_loss.data)
     else:
@@ -151,16 +153,18 @@ for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch
         bbox_loss_sum += float(net.bbox_loss.data)
         iou_loss_sum += float(net.iou_loss.data)
         cls_loss_sum += float(net.cls_loss.data)
+
+## ------ Checks if single gpu loss returns the same as multi gpu's myloss function -----
         ##print('loss type: ', loss.type())
         ##bbox_loss1,iou_loss1,cls_loss1,loss1 = myloss(bbox_pred, iou_pred, prob_pred, box_mask, iou_mask, class_mask,_boxes, _ious, _classes, num_boxes)
         ##print(torch.equal(loss, loss1))
         
-#    
+#    ----- Debugging -----
 #    print(bbox_loss.data,net.bbox_loss.data)
   #  print(bbox_loss,'iouloss: ',iou_loss,' clsloss:',cls_loss,' trainloss:',loss)
 
 
-    train_loss_sum += float(loss.data)
+    train_loss_sum += float(loss.data) #calculating loss sum for single gpu
         #print(bbox_loss,'iouloss: ',iou_loss,' clsloss:',cls_loss,' trainloss:',train_loss)
     optimizer.zero_grad()
     loss.backward()
@@ -179,7 +183,7 @@ for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch
                 iou_loss_sum, cls_loss_sum, duration,
                 str(datetime.timedelta(seconds=int((batch_per_epoch - step_cnt) * duration))))))  # noqa
 
-#save loss to file - epoch,loss
+        # ----- save loss to file - epoch,loss -----
         statfile.write('%d,%f\n' % (imdb.epoch, train_loss_sum))
 
         if summary_writer and step % cfg.log_interval == 0:
@@ -204,23 +208,25 @@ for step in range(start_epoch * imdb.batch_per_epoch, cfg.max_epoch * imdb.batch
             optimizer = torch.optim.SGD(net.parameters(), lr=lr,
                                         momentum=cfg.momentum,
                                         weight_decay=cfg.weight_decay)
+ # ----- Testing the trained net before saving -----
+#        print('TESTING JUST NET')
+###        test_net(net, imdb2, gt_boxes, gt_classes, dontcare, size_index, max_per_image, thresh, vis) #don't think testing is necessary for training
 
-        print('TESTING JUST NET')
-        test_net(net, imdb2, gt_boxes, gt_classes, dontcare, size_index, max_per_image, thresh, vis)
-
-        if True: ###step % (5*imdb.batch_per_epoch) == 0: #save weights every 5 epochs
-#        if True: #for saving every epoch
+        if step % (5*imdb.batch_per_epoch) == 0: #save weights every 5 epochs
+#        if True: #for saving every epoch, needed for Save/Load method
             save_name = os.path.join(cfg.train_output_dir,
                                  '{}_{}.h5'.format(cfg.exp_name, imdb.epoch))
             net_utils.save_net(save_name, net)
+ # ----- immediately load saved weight into net -----
             net_utils.load_net(save_name, net)
             net.cuda()
             net.eval()
+
             print(('save model: {}'.format(save_name)))
-            print('\nArguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    weightfile: ', args.weightfile, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n') #printing out parse arguments
+            print('\nArguments: \n    multi: ', args.multi, '\n    cls: ', args.cls, '\n    pretrained: ', args.pretrained, '\n    lr: ', args.lr , '\n    trainedfolder: ', args.trainedfolder, '\n') #printing out parse arguments
         step_cnt = 0
-        test_net(net, imdb2, gt_boxes, gt_classes, dontcare, size_index, max_per_image, thresh, vis)
-#    test_net(net, imdb2, max_per_image, thresh, vis)
+        test_net(net, imdb2, gt_boxes, gt_classes, dontcare, size_index, max_per_image, thresh, vis) #don't think testing is necessary for training
+#test_net(net, imdb2, max_per_image, thresh, vis, size_index) #first version's call to test_net - not used
 
 statfile.close() #closing statfile
 mapfile.close()
